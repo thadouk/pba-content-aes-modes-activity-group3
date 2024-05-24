@@ -16,6 +16,9 @@ use aes::{
     Aes128,
 };
 
+
+use rand::Rng; // For random init vector
+
 ///We're using AES 128 which has 16-byte (128 bit) blocks.
 const BLOCK_SIZE: usize = 16;
 
@@ -147,13 +150,61 @@ fn ecb_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 /// very first block because it doesn't have a previous block. Typically this IV
 /// is inserted as the first block of ciphertext.
 fn cbc_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    // Remember to generate a random initialization vector for the first block.
 
-    todo!()
+    // Remember to generate a random initialization vector for the first block.
+    let mut init_vector = [0u8; BLOCK_SIZE];
+    let mut rng = rand::thread_rng();
+    let padded_msg = pad(plain_text);
+    let msg_blocks = group(padded_msg);
+
+    rng.fill(&mut init_vector);
+    
+    let mut encrypted: Vec<[u8; BLOCK_SIZE]> = Vec::new();
+    let mut prev_block = init_vector;
+    
+    for block in msg_blocks {
+        let xored_block: [u8; BLOCK_SIZE] = block.iter()
+            .zip(prev_block.iter())
+            .map(|(a, b)| *a ^ *b)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+    
+        let enc_block = aes_encrypt(xored_block, &key);
+        prev_block = enc_block;
+        encrypted.push(enc_block);
+    }
+    
+    let enc_data = un_group(encrypted);
+    
+    let mut final_data = init_vector.to_vec();
+    final_data.extend(enc_data);
+    final_data
 }
 
+
+
 fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    todo!()
+    let blocks = group(cipher_text);
+    let mut decrypted: Vec<[u8; BLOCK_SIZE]> = Vec::new();
+    let init_vector = blocks[0];
+    let mut prev_block = init_vector;
+    
+    for block in blocks.iter().skip(1) {
+        let dec_block = aes_decrypt(*block, &key);
+    
+        let xored_block: [u8; BLOCK_SIZE] = dec_block.iter()
+            .zip(&prev_block)
+            .map(|(a, b)| *a ^ *b)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+    
+        prev_block = *block;
+        decrypted.push(xored_block);
+    }
+    let dec_data = un_group(decrypted);
+    un_pad(dec_data)
 }
 
 /// Another mode which you can implement on your own is counter mode.
