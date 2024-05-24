@@ -95,12 +95,18 @@ fn group(data: Vec<u8>) -> Vec<[u8; BLOCK_SIZE]> {
 
 /// Does the opposite of the group function
 fn un_group(blocks: Vec<[u8; BLOCK_SIZE]>) -> Vec<u8> {
-    todo!()
+    blocks.into_iter().flat_map(|v| v.into_iter()).collect()
 }
 
 /// Does the opposite of the pad function.
 fn un_pad(data: Vec<u8>) -> Vec<u8> {
-    todo!()
+    let number_pad_bytes: usize = match data.last() {
+        Some(number) => number.to_owned() as usize,
+        None => 0,
+    };
+    let mut unpad_data = data.clone();
+    unpad_data.truncate(data.len() - number_pad_bytes);
+    unpad_data
 }
 
 /// The first mode we will implement is the Electronic Code Book, or ECB mode.
@@ -111,12 +117,21 @@ fn un_pad(data: Vec<u8>) -> Vec<u8> {
 /// One good thing about this mode is that it is parallelizable. But to see why it is
 /// insecure look at: https://www.ubiqsecurity.com/wp-content/uploads/2022/02/ECB2.png
 fn ecb_encrypt(plain_text: Vec<u8>, key: [u8; 16]) -> Vec<u8> {
-    todo!()
+    let blocks = group(pad(plain_text));
+    let encrypted_blocks = blocks.into_iter().map(|b| aes_encrypt(b, &key)).collect();
+    un_group(encrypted_blocks)
 }
 
 /// Opposite of ecb_encrypt.
 fn ecb_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    todo!()
+    let encrypted_blocks = group(cipher_text);
+    let data_with_pad = un_group(
+        encrypted_blocks
+            .into_iter()
+            .map(|b| aes_decrypt(b, &key))
+            .collect(),
+    );
+    un_pad(data_with_pad)
 }
 
 /// The next mode, which you can implement on your own is cipherblock chaining.
