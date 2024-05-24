@@ -225,9 +225,139 @@ fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 /// inserted as the first block of the ciphertext.
 fn ctr_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
     // Remember to generate a random nonce
-    todo!()
+    let mut nonce = [0u8; 8];
+    let mut rng = rand::thread_rng();
+    rng.fill(&mut nonce);
+
+    let padded_msg = pad(plain_text);
+    let msg_blocks = group(padded_msg);
+
+    let mut encrypted: Vec<u8> = Vec::new();
+    encrypted.extend_from_slice(&nonce);
+
+    for (i, block) in msg_blocks.iter().enumerate() {
+        let counter = (i as u64).to_be_bytes();
+        let mut nonce_counter = [0u8; BLOCK_SIZE];
+        nonce_counter[..8].copy_from_slice(&nonce);
+        nonce_counter[8..].copy_from_slice(&counter);
+
+        let encrypted_counter = aes_encrypt(nonce_counter, &key);
+
+        let cipher_block: Vec<u8> = block.iter()
+            .zip(encrypted_counter.iter())
+            .map(|(a, b)| *a ^ *b)
+            .collect();
+
+        encrypted.extend(cipher_block);
+    }
+    
+    encrypted
 }
 
 fn ctr_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    todo!()
+    let (nonce, rest) = cipher_text.split_at(8);
+    let msg_blocks = group(rest.to_vec());
+
+    let mut decrypted: Vec<u8> = Vec::new();
+
+    for (i, block) in msg_blocks.iter().enumerate() {
+        let counter = (i as u64).to_be_bytes();
+        let mut nonce_counter = [0u8; BLOCK_SIZE];
+        nonce_counter[..8].copy_from_slice(&nonce);
+        nonce_counter[8..].copy_from_slice(&counter);
+
+        let encrypted_counter = aes_encrypt(nonce_counter, &key);
+
+        let plain_block: Vec<u8> = block.iter()
+            .zip(encrypted_counter.iter())
+            .map(|(a, b)| *a ^ *b)
+            .collect();
+
+        decrypted.extend(plain_block);
+    }
+    
+    un_pad(decrypted)
+}
+
+
+#[cfg(test)]
+mod optional_tests {
+    use super::*;
+
+    const TEST_KEY: [u8; 16] = [
+        6, 108, 74, 203, 170, 212, 94, 238, 171, 104, 19, 17, 248, 197, 127, 138,
+    ];
+
+    #[test]
+    fn ungroup_test() {
+        let data: Vec<u8> = (0..48).collect();
+        let grouped = group(data.clone());
+        let ungrouped = un_group(grouped);
+        assert_eq!(data, ungrouped);
+    }
+
+    #[test]
+    fn unpad_test() {
+        // An exact multiple of block size
+        let data: Vec<u8> = (0..48).collect();
+        let padded = pad(data.clone());
+        let unpadded = un_pad(padded);
+        assert_eq!(data, unpadded);
+
+        // A non-exact multiple
+        let data: Vec<u8> = (0..53).collect();
+        let padded = pad(data.clone());
+        let unpadded = un_pad(padded);
+        assert_eq!(data, unpadded);
+    }
+
+    #[test]
+    fn ecb_encrypt_test() {
+        let plaintext = b"Polkadot Blockchain Academy!".to_vec();
+        let encrypted = ecb_encrypt(plaintext, TEST_KEY);
+        assert_eq!(
+            "12d4105e43c4426e1f3e9455bb39c8fc0a4667637c9de8bad43ee801d313a555".to_string(),
+            hex::encode(encrypted)
+        );
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "optional-tests"), ignore)]
+    fn ecb_decrypt_test() {
+        let plaintext = b"Polkadot Blockchain Academy!".to_vec();
+        let ciphertext =
+            hex::decode("12d4105e43c4426e1f3e9455bb39c8fc0a4667637c9de8bad43ee801d313a555")
+                .unwrap();
+        assert_eq!(plaintext, ecb_decrypt(ciphertext, TEST_KEY))
+    }
+
+    #[test]
+    fn cbc_roundtrip_test() {
+        // Because CBC uses randomness, the round trip has to be tested
+        let plaintext = b"Polkadot Blockchain Academy!".to_vec();
+        let ciphertext = cbc_encrypt(plaintext.clone(), TEST_KEY);
+        let decrypted = cbc_decrypt(ciphertext.clone(), TEST_KEY);
+        assert_eq!(plaintext.clone(), decrypted);
+
+        let mut modified_ciphertext = ciphertext.clone();
+        modified_ciphertext[18] = 0;
+        let decrypted_bad = cbc_decrypt(modified_ciphertext, TEST_KEY);
+        assert_ne!(plaintext, decrypted_bad);
+    }
+
+
+
+#[test]
+fn ctr_roundtrip_test() {
+    // Custom roundtrip test
+    let plaintext = b"Polkadot Blockchain Academy!".to_vec();
+    let ciphertext = ctr_encrypt(plaintext.clone(), TEST_KEY);
+    let decrypted = ctr_decrypt(ciphertext.clone(), TEST_KEY);
+    assert_eq!(plaintext.clone(), decrypted);
+
+    let mut modified_ciphertext = ciphertext.clone();
+    modified_ciphertext[18] = 0;
+    let decrypted_bad = ctr_decrypt(modified_ciphertext, TEST_KEY);
+    assert_ne!(plaintext, decrypted_bad);
+}
 }

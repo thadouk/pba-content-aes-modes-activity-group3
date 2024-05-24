@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 aes = "0.8.1"
 rand = { version = "0.8.5", features = ["alloc", "small_rng"] }
+hex = "0.4.3"
